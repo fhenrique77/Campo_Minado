@@ -6,9 +6,6 @@ class Piece:
         self.flagged = False
         self.neighbors = []
 
-    def __str__(self):
-        return str(self.hasBomb)
-
     def getNumAround(self):
         return self.around
 

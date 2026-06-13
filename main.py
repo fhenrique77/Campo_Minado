@@ -1,12 +1,15 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-from PIL import Image, ImageTk
 import sqlite3
+import tkinter as tk
+from tkinter import messagebox, ttk
+
 import pygame
+from PIL import Image, ImageTk
+
 from game import Game
 
-SUPER_USER = "admin"  # Nome do super usuário
-MENU_MUSIC = 'menu_music.mp3'  # Arquivo de música para o menu e score
+SUPER_USER = "admin"
+MENU_MUSIC = "menu_music.mp3"
+MENU_VOLUME_DEFAULT = 35
 
 
 class Aplicacao(tk.Tk):
@@ -14,78 +17,128 @@ class Aplicacao(tk.Tk):
         super().__init__()
         self.title("Campo Minado")
 
-        # Inicializar Pygame mixer para tocar música
         pygame.mixer.init()
 
-        # Conexão com o banco de dados
         self.conn = sqlite3.connect("usuarios.db")
         self.cursor = self.conn.cursor()
         self.create_table()
 
-        # Crie um notebook com três guias
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True)
 
         self.tab1 = ttk.Frame(self.notebook)
         self.tab2 = ttk.Frame(self.notebook)
-        self.superuser_tab = ttk.Frame(self.notebook)  # Aba do super usuário
+        self.superuser_tab = ttk.Frame(self.notebook)
 
         self.notebook.add(self.tab1, text="Menu")
         self.notebook.add(self.tab2, text="Score")
-        self.notebook.add(self.superuser_tab, text="Super Usuário",
-                          state="hidden")  # Aba oculta inicialmente
+        self.notebook.add(
+            self.superuser_tab,
+            text="Super Usuário",
+            state="hidden",
+        )
 
-        # Reproduzir música ao entrar no Menu
+        self.music_volume_var = tk.IntVar(value=MENU_VOLUME_DEFAULT)
         self.play_menu_music()
+        
+        # Inicia a tela com um tamanho padrão para evitar tela muito esmagada e centraliza elementos
+        self.geometry("800x600")
+        self.minsize(600, 400)
+        
+        self.bg_image_original = Image.open("campo minado.png")
+        self.bg_photo_tab1 = None
+        self.bg_photo_tab2 = None
 
-        # Definir função para carregar a imagem após a janela estar completamente renderizada
-        self.after(100, self.load_background_image)
+        self.background_label_tab1 = tk.Label(self.tab1)
+        self.background_label_tab1.place(x=0, y=0, relwidth=1, relheight=1)
+        self.background_label_tab1.lower()
+        
+        self.background_label_tab2 = tk.Label(self.tab2)
+        self.background_label_tab2.place(x=0, y=0, relwidth=1, relheight=1)
+        self.background_label_tab2.lower()
 
-        # Widgets do menu (tab1) centralizados
-        self.username_label = tk.Label(
-            self.tab1, text="Nome de usuário:", bg="white")
-        self.username_label.place(relx=0.5, rely=0.35, anchor="center")
+        self.tab1.bind("<Configure>", self.resize_background)
+        self.tab2.bind("<Configure>", self.resize_background)
 
-        self.username_entry = tk.Entry(self.tab1)
-        self.username_entry.place(
-            relx=0.5, rely=0.4, anchor="center", width=200)
+        # Configurar Estilos Modernos
+        self.style = ttk.Style(self)
+        try:
+            self.style.theme_use("vista")
+        except tk.TclError:
+            pass
+        
+        self.style.configure("Menu.TFrame", background="#f8f9fa", relief="raised", borderwidth=1)
+        self.style.configure("Menu.TLabel", background="#f8f9fa", font=("Segoe UI", 11))
+        self.style.configure("Menu.TRadiobutton", background="#f8f9fa", font=("Segoe UI", 10))
+        self.style.configure("Title.TLabel", background="#f8f9fa", font=("Segoe UI", 16, "bold"))
+        self.style.configure("Menu.TButton", font=("Segoe UI", 10, "bold"))
 
-        self.difficulty_label = tk.Label(
-            self.tab1, text="Dificuldade:", bg="white")
-        self.difficulty_label.place(relx=0.5, rely=0.45, anchor="center")
+        # --- MENU TAB ---
+        self.menu_card = ttk.Frame(self.tab1, style="Menu.TFrame", padding=20)
+        self.menu_card.place(relx=0.5, rely=0.5, anchor="center", width=350)
 
-        self.difficulty_var = tk.StringVar()
-        self.difficulty_var.set("Fácil")
+        self.title_label = ttk.Label(self.menu_card, text="Nova Partida", style="Title.TLabel")
+        self.title_label.pack(pady=(0, 15))
 
-        self.difficulty_facil = tk.Radiobutton(
-            self.tab1, text="Fácil", variable=self.difficulty_var, value="Fácil", bg="white")
-        self.difficulty_facil.place(relx=0.5, rely=0.5, anchor="center")
+        self.username_label = ttk.Label(self.menu_card, text="Nome de usuário:", style="Menu.TLabel")
+        self.username_label.pack(anchor="w", padx=10)
 
-        self.difficulty_medio = tk.Radiobutton(
-            self.tab1, text="Médio", variable=self.difficulty_var, value="Médio", bg="white")
-        self.difficulty_medio.place(relx=0.5, rely=0.55, anchor="center")
+        self.username_entry = ttk.Entry(self.menu_card, font=("Segoe UI", 11))
+        self.username_entry.pack(fill="x", padx=10, pady=(0, 15))
 
-        self.difficulty_dificil = tk.Radiobutton(
-            self.tab1, text="Difícil", variable=self.difficulty_var, value="Difícil", bg="white")
-        self.difficulty_dificil.place(relx=0.5, rely=0.6, anchor="center")
+        self.difficulty_label = ttk.Label(self.menu_card, text="Dificuldade:", style="Menu.TLabel")
+        self.difficulty_label.pack(anchor="w", padx=10)
 
-        self.difficulty_impossivel = tk.Radiobutton(
-            self.tab1, text="Impossível", variable=self.difficulty_var, value="Impossível", bg="white")
-        self.difficulty_impossivel.place(relx=0.5, rely=0.65, anchor="center")
+        self.difficulty_var = tk.StringVar(value="Fácil")
 
-        self.start_button = tk.Button(
-            self.tab1, text="Iniciar Jogo", command=self.start_game)
-        self.start_button.place(relx=0.5, rely=0.75, anchor="center")
+        diff_frame = ttk.Frame(self.menu_card, style="Menu.TFrame")
+        diff_frame.pack(fill="x", padx=10, pady=(0, 15))
 
-        # Widgets da aba "Score" (tab2) centralizados
-        self.game_label = tk.Label(self.tab2, text="SCORE", bg="white")
-        self.game_label.place(relx=0.5, rely=0.1, anchor="center")
+        self.difficulty_facil = ttk.Radiobutton(
+            diff_frame, text="Fácil", variable=self.difficulty_var, value="Fácil", style="Menu.TRadiobutton"
+        )
+        self.difficulty_facil.grid(row=0, column=0, sticky="w", padx=5, pady=2)
 
-        # Tabela de pontuação
-        self.scoreboard_tree = ttk.Treeview(self.tab2, columns=(
-            "username", "partidas", "vitorias", "derrotas"))
-        self.scoreboard_tree.place(
-            relx=0.5, rely=0.5, anchor="center", width=500)
+        self.difficulty_medio = ttk.Radiobutton(
+            diff_frame, text="Médio", variable=self.difficulty_var, value="Médio", style="Menu.TRadiobutton"
+        )
+        self.difficulty_medio.grid(row=0, column=1, sticky="w", padx=5, pady=2)
+
+        self.difficulty_dificil = ttk.Radiobutton(
+            diff_frame, text="Difícil", variable=self.difficulty_var, value="Difícil", style="Menu.TRadiobutton"
+        )
+        self.difficulty_dificil.grid(row=1, column=0, sticky="w", padx=5, pady=2)
+
+        self.difficulty_impossivel = ttk.Radiobutton(
+            diff_frame, text="Impossível", variable=self.difficulty_var, value="Impossível", style="Menu.TRadiobutton"
+        )
+        self.difficulty_impossivel.grid(row=1, column=1, sticky="w", padx=5, pady=2)
+
+        self.volume_label = ttk.Label(self.menu_card, text="Volume da música:", style="Menu.TLabel")
+        self.volume_label.pack(anchor="w", padx=10)
+
+        self.volume_scale = ttk.Scale(
+            self.menu_card, from_=0, to=100, orient=tk.HORIZONTAL,
+            variable=self.music_volume_var, command=self.update_music_volume
+        )
+        self.volume_scale.pack(fill="x", padx=10, pady=(0, 20))
+
+        self.start_button = ttk.Button(self.menu_card, text="Iniciar Jogo", style="Menu.TButton", command=self.start_game)
+        self.start_button.pack(fill="x", padx=10, pady=(0, 10))
+
+        # --- SCORE TAB ---
+        self.score_card = ttk.Frame(self.tab2, style="Menu.TFrame", padding=20)
+        self.score_card.place(relx=0.5, rely=0.5, anchor="center")
+
+        self.game_label = ttk.Label(self.score_card, text="Placar de Jogadores", style="Title.TLabel")
+        self.game_label.pack(pady=(0, 15))
+
+        self.scoreboard_tree = ttk.Treeview(
+            self.score_card,
+            columns=("username", "partidas", "vitorias", "derrotas"),
+            height=8
+        )
+        self.scoreboard_tree.pack(fill="x", pady=(0, 15))
 
         self.scoreboard_tree.heading("#0", text="")
         self.scoreboard_tree.heading("username", text="Usuário")
@@ -95,26 +148,28 @@ class Aplicacao(tk.Tk):
 
         self.scoreboard_tree.column("#0", width=0, stretch=tk.NO)
         self.scoreboard_tree.column("username", anchor=tk.W, width=150)
-        self.scoreboard_tree.column("partidas", anchor=tk.E, width=50)
-        self.scoreboard_tree.column("vitorias", anchor=tk.E, width=50)
-        self.scoreboard_tree.column("derrotas", anchor=tk.E, width=50)
+        self.scoreboard_tree.column("partidas", anchor=tk.CENTER, width=70)
+        self.scoreboard_tree.column("vitorias", anchor=tk.CENTER, width=70)
+        self.scoreboard_tree.column("derrotas", anchor=tk.CENTER, width=70)
 
         self.update_scoreboard()
 
-        # Adicionando botão de "Mudar Nome" na aba de Score
-        self.change_name_button = tk.Button(
-            self.tab2, text="Mudar Nome", command=self.change_name)
-        self.change_name_button.place(relx=0.5, rely=0.85, anchor="center")
+        self.change_name_button = ttk.Button(self.score_card, text="Mudar Nome", style="Menu.TButton", command=self.change_name)
+        self.change_name_button.pack(fill="x", pady=(0, 5))
 
-        # Widgets da aba "Super Usuário"
-        self.superuser_label = tk.Label(
-            self.superuser_tab, text="Gerenciamento de Usuários", bg="white")
-        self.superuser_label.place(relx=0.5, rely=0.1, anchor="center")
+        # --- SUPERUSER TAB ---
+        self.superuser_card = ttk.Frame(self.superuser_tab, style="Menu.TFrame", padding=20)
+        self.superuser_card.place(relx=0.5, rely=0.5, anchor="center")
 
-        self.superuser_tree = ttk.Treeview(self.superuser_tab, columns=(
-            "username", "partidas", "vitorias", "derrotas"))
-        self.superuser_tree.place(
-            relx=0.5, rely=0.5, anchor="center", width=500)
+        self.superuser_label = ttk.Label(self.superuser_card, text="Gerenciamento de Usuários", style="Title.TLabel")
+        self.superuser_label.pack(pady=(0, 15))
+
+        self.superuser_tree = ttk.Treeview(
+            self.superuser_card,
+            columns=("username", "partidas", "vitorias", "derrotas"),
+            height=10
+        )
+        self.superuser_tree.pack(fill="x", pady=(0, 15))
 
         self.superuser_tree.heading("#0", text="")
         self.superuser_tree.heading("username", text="Usuário")
@@ -124,75 +179,51 @@ class Aplicacao(tk.Tk):
 
         self.superuser_tree.column("#0", width=0, stretch=tk.NO)
         self.superuser_tree.column("username", anchor=tk.W, width=150)
-        self.superuser_tree.column("partidas", anchor=tk.E, width=50)
-        self.superuser_tree.column("vitorias", anchor=tk.E, width=50)
-        self.superuser_tree.column("derrotas", anchor=tk.E, width=50)
+        self.superuser_tree.column("partidas", anchor=tk.CENTER, width=70)
+        self.superuser_tree.column("vitorias", anchor=tk.CENTER, width=70)
+        self.superuser_tree.column("derrotas", anchor=tk.CENTER, width=70)
 
-        # Adicionar evento de clique para edição
         self.superuser_tree.bind("<Double-1>", self.on_double_click)
 
-        # Adicionar botão para excluir todos os usuários
-        self.delete_all_button = tk.Button(
-            self.superuser_tab, text="Excluir Todos os Usuários", command=self.delete_all_users)
-        self.delete_all_button.place(relx=0.5, rely=0.85, anchor="center")
+        self.delete_all_button = ttk.Button(
+            self.superuser_card, text="Excluir Todos os Usuários", style="Menu.TButton", command=self.delete_all_users
+        )
+        self.delete_all_button.pack(fill="x", pady=(0, 5))
 
     def play_menu_music(self):
-        """Função para tocar a música do menu e score"""
         try:
-            pygame.mixer.music.load(MENU_MUSIC)  # Carregar música
-            pygame.mixer.music.play(-1)  # Tocar em loop infinito
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
+            pygame.mixer.music.load(MENU_MUSIC)
+            self.update_music_volume()
+            pygame.mixer.music.play(-1)
         except pygame.error as e:
             print(f"Erro ao carregar ou tocar a música do menu: {e}")
 
+    def update_music_volume(self, value=None):
+        if pygame.mixer.get_init():
+            pygame.mixer.music.set_volume(self.music_volume_var.get() / 100)
+
     def stop_music(self):
-        """Função para parar a música"""
-        if pygame.mixer.get_init():  # Verifica se o mixer foi inicializado
+        if pygame.mixer.get_init():
             pygame.mixer.music.stop()
 
-    def load_background_image(self):
-        width_tab1 = self.tab1.winfo_width()
-        height_tab1 = self.tab1.winfo_height()
-
-        width_tab2 = self.tab2.winfo_width()
-        height_tab2 = self.tab2.winfo_height()
-
-        if width_tab1 == 1 or height_tab1 == 1 or width_tab2 == 1 or height_tab2 == 1:
-            self.after(100, self.load_background_image)
+    def resize_background(self, event):
+        # Evita redimensionamentos com tamanhos inválidos
+        if event.width <= 1 or event.height <= 1:
             return
-
-        try:
-            self.background_image_tab1 = Image.open("campo minado.png")
-            self.background_image_tab1 = self.background_image_tab1.resize(
-                (width_tab1, height_tab1), Image.Resampling.LANCZOS)
-            self.background_image_tab1 = ImageTk.PhotoImage(
-                self.background_image_tab1)
-
-            self.background_label_tab1 = tk.Label(
-                self.tab1, image=self.background_image_tab1)
-            self.background_label_tab1.place(relwidth=1, relheight=1)
-            self.background_label_tab1.lower()
-        except Exception as e:
-            print(f"Erro ao carregar a imagem da tab1: {e}")
-            self.background_label_tab1 = tk.Label(
-                self.tab1, text="Erro ao carregar a imagem de fundo")
-            self.background_label_tab1.place(relwidth=1, relheight=1)
-
-        try:
-            self.background_image_tab2 = Image.open("campo minado.png")
-            self.background_image_tab2 = self.background_image_tab2.resize(
-                (width_tab2, height_tab2), Image.Resampling.LANCZOS)
-            self.background_image_tab2 = ImageTk.PhotoImage(
-                self.background_image_tab2)
-
-            self.background_label_tab2 = tk.Label(
-                self.tab2, image=self.background_image_tab2)
-            self.background_label_tab2.place(relwidth=1, relheight=1)
-            self.background_label_tab2.lower()
-        except Exception as e:
-            print(f"Erro ao carregar a imagem da tab2: {e}")
-            self.background_label_tab2 = tk.Label(
-                self.tab2, text="Erro ao carregar a imagem de fundo")
-            self.background_label_tab2.place(relwidth=1, relheight=1)
+            
+        widget_id = str(event.widget)
+        
+        # Redimensiona a imagem para a nova resolução do widget (tab) mantendo o fundo
+        resized_img = self.bg_image_original.resize((event.width, event.height), Image.Resampling.LANCZOS)
+        
+        if widget_id == str(self.tab1):
+            self.bg_photo_tab1 = ImageTk.PhotoImage(resized_img)
+            self.background_label_tab1.config(image=self.bg_photo_tab1)
+        elif widget_id == str(self.tab2):
+            self.bg_photo_tab2 = ImageTk.PhotoImage(resized_img)
+            self.background_label_tab2.config(image=self.bg_photo_tab2)
 
     def create_table(self):
         self.cursor.execute("""
@@ -208,25 +239,27 @@ class Aplicacao(tk.Tk):
     def update_scoreboard(self):
         self.scoreboard_tree.delete(*self.scoreboard_tree.get_children())
         self.cursor.execute(
-            "SELECT username, partidas, vitorias, derrotas FROM usuarios ORDER BY vitorias DESC")
+            "SELECT username, partidas, vitorias, derrotas "
+            "FROM usuarios ORDER BY vitorias DESC"
+        )
         for row in self.cursor.fetchall():
             self.scoreboard_tree.insert(
-                "", tk.END, values=(row[0], row[1], row[2], row[3]))
+                "", tk.END, values=(row[0], row[1], row[2], row[3])
+            )
 
     def start_game(self):
         username = self.username_entry.get().strip()
 
-        # Parar a música ao iniciar o jogo
         self.stop_music()
 
-        # Verificar se o super usuário foi digitado
         if username == SUPER_USER:
-            self.admin_panel()  # Chama a função correta para o super usuário
+            self.admin_panel()
             return
 
         if not username:
             messagebox.showerror(
-                "Erro", "Por favor, insira um nome de usuário.")
+                "Erro", "Por favor, insira um nome de usuário."
+            )
             return
 
         difficulty = self.difficulty_var.get()
@@ -244,77 +277,77 @@ class Aplicacao(tk.Tk):
             size = (40, 40)
             prob = 0.85
 
-        # Verificar se o usuário existe no banco de dados
         self.cursor.execute(
-            "SELECT * FROM usuarios WHERE username = ?", (username,))
+            "SELECT * FROM usuarios WHERE username = ?", (username,)
+        )
         user = self.cursor.fetchone()
 
         if user is None:
-            # Se o usuário não existir, inseri-lo no banco de dados com 0 partidas, 0 vitórias e 0 derrotas
             self.cursor.execute(
-                "INSERT INTO usuarios (username, partidas, vitorias, derrotas) VALUES (?, ?, ?, ?)", (username, 0, 0, 0))
+                "INSERT INTO usuarios "
+                "(username, partidas, vitorias, derrotas) "
+                "VALUES (?, ?, ?, ?)",
+                (username, 0, 0, 0),
+            )
             self.conn.commit()
 
-        # Atualizar o número de partidas do usuário
         self.cursor.execute(
-            "UPDATE usuarios SET partidas = partidas + 1 WHERE username = ?", (username,))
+            "UPDATE usuarios SET partidas = partidas + 1 WHERE username = ?",
+            (username,),
+        )
         self.conn.commit()
 
-        # Garantir que o Pygame não seja reiniciado desnecessariamente
-        screen = pygame.display.set_mode((800, 600))
-        pygame.display.set_caption('Campo Minado')
+        pygame.display.set_caption("Campo Minado")
 
         g = Game(size, prob)
-        g.run()  # Executa o jogo
+        g.run()
+        
+        # Voltar a tocar a música do menu após a partida
+        self.play_menu_music()
 
-        # Verifica se o jogador venceu ou perdeu
         if g.board.getWon():
             self.cursor.execute(
-                "UPDATE usuarios SET vitorias = vitorias + 1 WHERE username = ?", (username,))
+                "UPDATE usuarios SET vitorias = vitorias + 1 WHERE username = ?",
+                (username,),
+            )
         elif g.board.getLost():
             self.cursor.execute(
-                "UPDATE usuarios SET derrotas = derrotas + 1 WHERE username = ?", (username,))
+                "UPDATE usuarios SET derrotas = derrotas + 1 WHERE username = ?",
+                (username,),
+            )
         self.conn.commit()
         self.update_scoreboard()
 
     def admin_panel(self):
-        """Função chamada quando o super usuário acessa o painel administrativo"""
-        self.notebook.tab(self.superuser_tab,
-                          state="normal")  # Torna a aba "Super Usuário" visível
-        # Seleciona a aba de super usuário
+        self.notebook.tab(self.superuser_tab, state="normal")
         self.notebook.select(self.superuser_tab)
-        # Atualiza a tabela de usuários para o super usuário editar
         self.update_superuser_tree()
 
     def update_superuser_tree(self):
         self.superuser_tree.delete(*self.superuser_tree.get_children())
         self.cursor.execute(
-            "SELECT username, partidas, vitorias, derrotas FROM usuarios")
+            "SELECT username, partidas, vitorias, derrotas FROM usuarios"
+        )
         for row in self.cursor.fetchall():
             self.superuser_tree.insert(
-                "", tk.END, values=(row[0], row[1], row[2], row[3]))
+                "", tk.END, values=(row[0], row[1], row[2], row[3])
+            )
 
     def on_double_click(self, event):
-        """Função para permitir edição direta nas células do Treeview"""
         item = self.superuser_tree.selection()[0]
-        column = self.superuser_tree.identify_column(
-            event.x)  # Coluna que foi clicada
-
-        # Pega o item selecionado e a coluna correspondente
+        column = self.superuser_tree.identify_column(event.x)
         values = self.superuser_tree.item(item, "values")
 
-        # Determine qual coluna foi clicada (nome de usuário, partidas, vitórias ou derrotas)
-        if column == "#1":  # Nome de Usuário
+        if column == "#1":
             self.edit_cell(item, column, "username", values[0], values[0])
-        elif column == "#2":  # Partidas
+        elif column == "#2":
             self.edit_cell(item, column, "partidas", values[0], values[1])
-        elif column == "#3":  # Vitórias
+        elif column == "#3":
             self.edit_cell(item, column, "vitorias", values[0], values[2])
-        elif column == "#4":  # Derrotas
+        elif column == "#4":
             self.edit_cell(item, column, "derrotas", values[0], values[3])
 
     def edit_cell(self, item, column, db_column, username, old_value):
-        """Abre uma Entry para editar a célula selecionada"""
         edit_window = tk.Toplevel(self)
         edit_window.title(f"Editar {db_column}")
 
@@ -327,75 +360,77 @@ class Aplicacao(tk.Tk):
         def save_new_value():
             new_value = new_value_entry.get()
 
-            # Se o super usuário estiver editando o nome do usuário
             if db_column == "username":
-                # Verifica se o nome já existe no banco de dados
                 self.cursor.execute(
-                    "SELECT username FROM usuarios WHERE username = ?", (new_value,))
+                    "SELECT username FROM usuarios WHERE username = ?",
+                    (new_value,),
+                )
                 if self.cursor.fetchone() is not None:
                     messagebox.showerror(
-                        "Erro", "Esse nome de usuário já existe.")
+                        "Erro", "Esse nome de usuário já existe."
+                    )
                     return
 
-                # Atualiza o valor no Treeview
                 current_values = list(self.superuser_tree.item(item, "values"))
                 current_values[0] = new_value
                 self.superuser_tree.item(item, values=current_values)
 
-                # Atualiza o banco de dados
                 self.cursor.execute(
-                    "UPDATE usuarios SET username = ? WHERE username = ?", (new_value, username))
+                    "UPDATE usuarios SET username = ? WHERE username = ?",
+                    (new_value, username),
+                )
             else:
-                # Atualiza o valor no Treeview
                 current_values = list(self.superuser_tree.item(item, "values"))
-                if column == "#2":  # Partidas
+                if column == "#2":
                     current_values[1] = new_value
-                elif column == "#3":  # Vitórias
+                elif column == "#3":
                     current_values[2] = new_value
-                elif column == "#4":  # Derrotas
+                elif column == "#4":
                     current_values[3] = new_value
                 self.superuser_tree.item(item, values=current_values)
 
-                # Atualiza o banco de dados
                 self.cursor.execute(
-                    f"UPDATE usuarios SET {db_column} = ? WHERE username = ?", (new_value, username))
+                    f"UPDATE usuarios SET {db_column} = ? WHERE username = ?",
+                    (new_value, username),
+                )
 
             self.conn.commit()
 
             messagebox.showinfo(
-                "Sucesso", f"{db_column} atualizado para {new_value}")
+                "Sucesso", f"{db_column} atualizado para {new_value}"
+            )
             edit_window.destroy()
-
-            # Exibe mensagem solicitando reiniciar o jogo
             self.show_restart_message()
 
         tk.Button(edit_window, text="Salvar", command=save_new_value).pack()
 
     def show_restart_message(self):
-        """Exibe uma mensagem solicitando reiniciar o jogo"""
         messagebox.showinfo(
-            "Atenção", "Reinicie o jogo para atualizar os dados.")
+            "Atenção", "Reinicie o jogo para atualizar os dados."
+        )
 
     def delete_all_users(self):
-        """Função para deletar todos os usuários do banco de dados"""
-        if messagebox.askyesno("Confirmação", "Tem certeza de que deseja excluir todos os usuários?"):
+        if messagebox.askyesno(
+            "Confirmação",
+            "Tem certeza de que deseja excluir todos os usuários?",
+        ):
             self.cursor.execute("DELETE FROM usuarios")
             self.conn.commit()
             self.update_superuser_tree()
             self.update_scoreboard()
             messagebox.showinfo(
-                "Sucesso", "Todos os usuários foram excluídos com sucesso.")
+                "Sucesso", "Todos os usuários foram excluídos com sucesso."
+            )
 
     def change_name(self):
-        """Função para permitir que o usuário mude seu nome na aba de Score"""
-        # Verifica se um item está selecionado
         selected = self.scoreboard_tree.selection()
         if not selected:
             messagebox.showerror(
-                "Erro", "Selecione um usuário para mudar o nome.")
+                "Erro", "Selecione um usuário para mudar o nome."
+            )
             return
 
-        item = self.scoreboard_tree.selection()[0]
+        item = selected[0]
         current_values = self.scoreboard_tree.item(item, "values")
         current_username = current_values[0]
 
@@ -408,37 +443,36 @@ class Aplicacao(tk.Tk):
         new_name_entry.pack()
 
         def save_new_name():
-            # Extrai o novo nome digitado
             new_name = new_name_entry.get().strip()
 
-            # Validações
             if not new_name:
                 messagebox.showerror(
-                    "Erro", "O nome de usuário não pode ser vazio.")
+                    "Erro", "O nome de usuário não pode ser vazio."
+                )
                 return
 
-            # Verifica se o novo nome já existe no banco de dados
             self.cursor.execute(
-                "SELECT username FROM usuarios WHERE username = ?", (new_name,))
+                "SELECT username FROM usuarios WHERE username = ?",
+                (new_name,),
+            )
             if self.cursor.fetchone() is not None:
                 messagebox.showerror("Erro", "Esse nome de usuário já existe.")
                 return
 
-            # Converte o tuple em lista para permitir modificações
             current_values = list(self.scoreboard_tree.item(item, "values"))
-            current_values[0] = new_name  # Atualiza o nome de usuário na lista
+            current_values[0] = new_name
 
-            # Atualiza o nome no Treeview
-            self.scoreboard_tree.item(item, values=tuple(
-                current_values))  # Converte de volta para tuple
+            self.scoreboard_tree.item(item, values=tuple(current_values))
 
-            # Atualiza o banco de dados
             self.cursor.execute(
-                "UPDATE usuarios SET username = ? WHERE username = ?", (new_name, current_username))
+                "UPDATE usuarios SET username = ? WHERE username = ?",
+                (new_name, current_username),
+            )
             self.conn.commit()
 
             messagebox.showinfo(
-                "Sucesso", "Nome de usuário alterado com sucesso.")
+                "Sucesso", "Nome de usuário alterado com sucesso."
+            )
             change_window.destroy()
 
         tk.Button(change_window, text="Salvar", command=save_new_name).pack()

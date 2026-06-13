@@ -1,4 +1,5 @@
 import random
+
 from piece import Piece
 
 
@@ -18,17 +19,8 @@ class Board:
         self.setNeighbors()
         self.setNumAround()
 
-    def print(self):
-        for row in self.board:
-            for piece in row:
-                print(piece, end=" ")
-            print()
-
     def getBoard(self):
         return self.board
-
-    def getSize(self):
-        return self.size
 
     def getPiece(self, index):
         return self.board[index[0]][index[1]]
